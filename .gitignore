@@ -1,0 +1,22 @@
+# Datos y resultados: no se versionan (se conserva solo la carpeta)
+datos/crudos/*
+datos/procesados/*
+resultados/*
+!**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Archivos temporales de SIG
+*.aux.xml
+*.ovr
+*.lock
+
+# Sistema / editor
+Thumbs.db
+desktop.ini
+.vscode/
