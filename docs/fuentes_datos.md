@@ -42,6 +42,41 @@ Los datasets `ksew-j3zj`, `m84s-22dd`, `uwim-sqxg` y `ns63-ha4g` son vistas de `
 - Prueba 2026-11-14: al abrir el portal con un navegador automatizado (Playwright/Chromium), el firewall del IDEAM respondió "Web Page Blocked" (Attack ID 20000051), es decir, bloquea activamente el acceso automatizado. No se intentó evadir el bloqueo: hacerlo iría contra un control explícito del IDEAM y podría hacer que bloqueen la IP de la empresa.
 - Alternativas viables: (a) descargar manualmente desde el portal y que el programa lea esos archivos; (b) solicitar formalmente al IDEAM acceso a un servicio o entrega de datos.
 
-## Fuentes candidatas para fases siguientes
+## Inventario de fuentes (revisado 2026-11-14)
 
-SIATA (Valle de Aburrá), Cornare, Corantioquia, CAR Cundinamarca, CVC, DHIME (IDEAM convencionales). Cada una se agrega como un módulo en `estaciones/` que implemente `FuentePluviometrica` (ver `estaciones/base.py`).
+Cada fuente se probó con peticiones reales. "Automática" = integrada en el programa.
+
+### Integradas (descarga automática)
+
+| Fuente | Módulo | Estaciones con lluvia | Resolución / historia | Actualidad | Notas |
+|---|---|---|---|---|---|
+| IDEAM — datos.gov.co `s54a-sgyg` + catálogo `hp9r-jxuu` | `ideam.py` | ~1.900 automáticas en catálogo (solo una parte publica datos) | 10 min (algunas 1 min), desde 2003 | ~1 día | Duplicados, ver arriba. |
+| Terceros que transmiten por el IDEAM — `57sv-p2fu` (IDIGER, FOPAE, ISAGEN, PNN, CAS, EAAB, CVC, CRQ) | `ideam.py` | ~89 | Igual que `s54a-sgyg` cuando están allí | Variable: IDIGER llega hasta 2026-07, ISAGEN hasta 2017 | `57sv-p2fu` solo guarda las últimas ~12 h; se usa para descubrir estaciones. El filtro de 365 días descarta las desactualizadas. |
+| Piragua — Corantioquia (`piragua.corantioquia.gov.co/api/v1`) | `piragua.py` | 85 pluviógrafos + 22 meteorológicas | Diaria (también horaria y 5–10 min), desde 2013 | ~1 día | Trae `porc_datos` (% del día). El campo `calidad` (1, 2, 4) no está documentado y no se usa. Valores −999 = faltante. Hay valores iniciales dudosos (p. ej. 358 mm el primer día de la estación 1). |
+| MARCO — Cornare (`marco.cornare.gov.co/api/v1`) | `cornare.py` | 32 | 5 min u horaria, desde ~2025 | minutos | Historia corta. Su servidor envía la cadena de certificados incompleta: se resuelve con `truststore` (almacén de certificados de Windows), sin desactivar la verificación SSL. |
+
+### No integradas: requieren descarga manual o solicitud
+
+El programa las lista en la hoja *Descarga manual* (y `estaciones_descarga_manual.shp`) cuando están cerca del proyecto.
+
+| Fuente | Qué hay | Por qué no es automática | Cómo obtenerla |
+|---|---|---|---|
+| IDEAM convencionales (DHIME) | Series largas (décadas) de pluviómetros y climatológicas | Sin API pública; el portal bloquea acceso automatizado | Descarga manual en atencionciudadano.ideam.gov.co, o solicitud formal al IDEAM |
+| SIATA (AMVA) | 228 pluviómetros en el Valle de Aburrá | En línea solo publica valores actuales (`/data/siata_app/Pluviometrica.json`); su portal de descarga ya no existe | Solicitar histórico a SIATA |
+| CAR Cundinamarca | 208 estaciones con precipitación (metadatos en ArcGIS `Red_Hidrometereologica_CAR`) | No publica series | Solicitud a la CAR |
+| EPM | Red pluviométrica propia | Sin datos abiertos (la capa en SIATA está congelada en 2018) | Solicitud a EPM |
+| Cenicafé (FNC) | Red agroclimática cafetera | Solo datos mensuales/anuales en línea | Formulario de solicitud de Cenicafé |
+| Corpocaldas / CDIAC | Red de Manizales | Solo boletines PDF | Solicitud |
+| Corpourabá, Cortolima, CARDER, Corpoboyacá, DAGMA | — | No se encontraron datos abiertos | Solicitud |
+
+### Evaluadas y descartadas o pendientes
+
+| Fuente | Resultado |
+|---|---|
+| SAB/IDIGER Bogotá — archivos diarios (`pikt-ntav`, datosabiertos.bogota.gov.co) | Historia 2021-09 a 2025-12 en archivos anuales (formato ancho, coma decimal). No está al día: candidata a complemento histórico. Sus estaciones activas ya entran por `57sv-p2fu`/`s54a-sgyg` cuando el IDEAM las recibe. |
+| CVC `avya-p282`, CAM `2jrp-f4m5`, CRQ `nuk6-xevt`, CDMB `57ur-5p28` (datos.gov.co) | Extractos estáticos 2021–2025, no actualizados. Candidatos a complemento histórico. |
+| NOAA GHCN-Daily | Solo ~27 aeropuertos de Colombia (los mismos del IDEAM), historia desde 1960 pero congelada desde 2025-08-24 y con muchos huecos. Útil a futuro solo como historia larga de aeropuertos. |
+| NOAA GSOD/ISD | Mismo contenido que GHCN-D, congelado desde 2025-08. No útil. |
+| Meteostat | Para Colombia, la "precipitación" reciente es de un modelo de pronóstico (DWD MOSMIX), no medida. No usar. |
+| OGIMET (SYNOP) | Al día, pero mismos ~27 aeropuertos, requiere decodificar SYNOP y es un servicio personal para uso no comercial. No integrado. |
+| CHIRPS / IMERG | Productos grillados (no estaciones). Posible complemento en la fase de procesamiento. |

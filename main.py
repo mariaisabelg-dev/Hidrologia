@@ -21,6 +21,9 @@ import pandas as pd
 
 from estaciones import BuscadorEstaciones, FuenteIDEAM
 from estaciones import exportar
+from estaciones.cornare import FuenteCornare
+from estaciones.manual import estaciones_para_descarga_manual
+from estaciones.piragua import FuentePiragua
 from estaciones.geo import (LON_MAX, LON_MIN, CoordenadaInvalida, leer_coordenadas, leer_valor,
                             validar_en_colombia)
 
@@ -81,11 +84,19 @@ def main() -> None:
     t0 = time.time()
 
     ideam = FuenteIDEAM(cobertura_minima=args.cobertura_minima)
-    buscador = BuscadorEstaciones([ideam])
+    fuentes = [
+        ideam,
+        FuentePiragua(cobertura_minima=args.cobertura_minima),
+        FuenteCornare(cobertura_minima=args.cobertura_minima),
+    ]
+    buscador = BuscadorEstaciones(fuentes)
     res = buscador.buscar(lat, lon, n=args.n, max_dias_sin_datos=args.max_dias_sin_datos)
     if not res.estaciones:
         raise SystemExit("No se encontró ninguna estación con datos disponibles.")
     buscador.descargar_series(res, desde=date(args.desde, 1, 1))
+
+    logging.info("Buscando estaciones cercanas para descarga manual...")
+    manual = estaciones_para_descarga_manual(lat, lon, excluir={e.codigo for e in res.estaciones})
 
     carpeta = exportar.carpeta_ejecucion(args.salidas, lat, lon)
     criterios = {
@@ -93,9 +104,12 @@ def main() -> None:
         "Latitud proyecto": lat,
         "Longitud proyecto": lon,
         "Fecha de consulta": date.today().isoformat(),
-        "Catálogo de estaciones": "datos.gov.co hp9r-jxuu (CNE IDEAM)",
-        "Serie de precipitación": "datos.gov.co s54a-sgyg (IDEAM, observaciones cada 10 min)",
-        "Filtro catálogo": "estado = Activa, tecnología automática, categoría con medición de precipitación",
+        "Fuentes automáticas": "IDEAM y terceros (datos.gov.co hp9r-jxuu, 57sv-p2fu, s54a-sgyg); "
+        "Piragua-Corantioquia (piragua.corantioquia.gov.co); MARCO-Cornare (marco.cornare.gov.co)",
+        "Fuentes no disponibles en esta ejecución": ", ".join(buscador.fuentes_caidas) or "ninguna",
+        "Filtro catálogo IDEAM": "estado = Activa, tecnología automática, categoría con medición de precipitación",
+        "Descarga manual": "10 estaciones IDEAM (DHIME) + 10 de otras entidades, activas, ≤ 50 km, del catálogo nacional y SIATA, "
+        "que no están entre las seleccionadas",
         "Estación confirmada si": f"tiene datos y el último es de hace ≤ {args.max_dias_sin_datos} días",
         "Distancia": "Haversine (esfera de radio 6371.0088 km)",
         "Día pluviométrico": "día calendario 00:00–24:00 hora local (suma de registros de 10 min, deduplicados)",
@@ -104,14 +118,20 @@ def main() -> None:
         "Descarga desde": f"{args.desde}-01-01",
         "Bloques no descargados": "; ".join(f"{c} {a}–{b}" for c, a, b in ideam.bloques_fallidos) or "ninguno",
     }
-    exportar.resumen_excel(res, carpeta, criterios)
+    exportar.resumen_excel(res, carpeta, criterios, manual)
     exportar.shapefile_ubicacion(res, carpeta, args.nombre)
+    exportar.shapefile_manual(manual, carpeta)
     exportar.series_excel_csv(res, carpeta)
 
-    columnas = ["Código", "Nombre", "Entidad", "Municipio", "Elevación (msnm)", "Distancia (km)",
+    columnas = ["Código", "Nombre", "Entidad", "Fuente", "Municipio", "Elevación (msnm)", "Distancia (km)",
                 "Fecha inicio", "Fecha fin", "Total registros (días)", "% faltantes"]
-    with pd.option_context("display.width", 200, "display.max_columns", None, "display.max_colwidth", 40):
-        print("\n" + res.resumen[columnas].to_string(index=False))
+    with pd.option_context("display.width", 220, "display.max_columns", None, "display.max_colwidth", 40):
+        print("\nESTACIONES SELECCIONADAS (descarga automática)")
+        print(res.resumen[columnas].to_string(index=False))
+        if not manual.empty:
+            print(f"\nPARA DESCARGA MANUAL: {len(manual)} estaciones cercanas sin descarga automática "
+                  "(hoja 'Descarga manual' y estaciones_descarga_manual.shp)")
+            print(manual[["Código", "Nombre", "Entidad", "Tecnología", "Distancia (km)"]].head(8).to_string(index=False))
     if res.descartadas:
         print(f"\nCandidatas descartadas por no tener datos útiles: {len(res.descartadas)} (ver hoja 'Descartadas').")
     if ideam.bloques_fallidos:

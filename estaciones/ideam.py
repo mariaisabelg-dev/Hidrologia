@@ -25,7 +25,7 @@ import logging
 import pandas as pd
 import requests
 
-from .base import Estacion, FuentePluviometrica
+from .base import Estacion, FuentePluviometrica, marcar_dias_incompletos
 from .socrata import ClienteSocrata
 
 log = logging.getLogger(__name__)
@@ -46,9 +46,33 @@ CATEGORIAS_CON_PRECIPITACION = (
     "HidroMeteorológica",
 )
 
-SIGLAS_ENTIDAD = {
-    "INSTITUTO DE HIDROLOGÍA METEOROLOGÍA Y ESTUDIOS AMBIENTALES": "IDEAM",
-}
+DS_TIEMPO_REAL = "57sv-p2fu"  # "Datos de Estaciones de IDEAM y de Terceros": últimas ~12 h
+
+# Sigla por palabra clave (algunos nombres llegan con la codificación dañada desde la fuente).
+SIGLAS_ENTIDAD = [
+    ("HIDROLOG", "IDEAM"),
+    ("GESTI", "IDIGER"),  # Instituto Distrital de Gestión de Riesgos y Cambio Climático
+    ("FOPAE", "FOPAE"),
+    ("ISAG", "ISAGEN"),
+    ("PARQUES NACIONALES", "PNN"),
+    ("ACUEDUCTO Y ALCANTARILLADO DE BOGOT", "EAAB"),
+    ("VALLE DEL CAUCA", "CVC"),
+    ("QUIND", "CRQ"),
+    ("REGIONAL DE SANTANDER", "CAS"),
+    ("REGIONAL DE CUNDINAMARCA", "CAR"),
+    ("REGIONAL DE ANTIOQUIA", "CORANTIOQUIA"),
+    ("RIOS NEGRO Y NARE", "CORNARE"),
+    ("METROPOLITANA DEL VALLE DE ABURR", "AMVA"),
+    ("EMPRESAS PÚBLICAS DE MEDELL", "EPM"),
+]
+
+
+def sigla_entidad(nombre: str) -> str:
+    n = (nombre or "").upper()
+    for clave, sigla in SIGLAS_ENTIDAD:
+        if clave in n:
+            return sigla
+    return nombre or ""
 
 
 def _float(x) -> float | None:
@@ -56,6 +80,13 @@ def _float(x) -> float | None:
         return float(x)
     except (TypeError, ValueError):
         return None
+
+
+def normalizar_codigo(codigo: str) -> str:
+    """El catálogo trae el mismo código con y sin ceros iniciales ('27011270' y '0027011270').
+    Se usa la forma de 10 dígitos, que es la de las series de datos."""
+    codigo = (codigo or "").strip()
+    return codigo.zfill(10) if codigo.isdigit() else codigo
 
 
 def _bloques(desde: date, hasta: date, meses: int = 6) -> list[tuple[date, date]]:
@@ -104,14 +135,14 @@ class FuenteIDEAM(FuentePluviometrica):
         estaciones: dict[str, Estacion] = {}
         for f in filas:  # el catálogo trae filas repetidas: se deja una por código
             lat, lon = _float(f.get("latitud")), _float(f.get("longitud"))
-            if f.get("codigo") in estaciones or lat is None or lon is None:
+            codigo = normalizar_codigo(f.get("codigo"))
+            if codigo in estaciones or lat is None or lon is None:
                 continue
-            entidad = f.get("entidad", "")
-            estaciones[f["codigo"]] = Estacion(
-                codigo=f["codigo"],
+            estaciones[codigo] = Estacion(
+                codigo=codigo,
                 nombre=f.get("nombre", ""),
                 fuente=self.nombre,
-                entidad=SIGLAS_ENTIDAD.get(entidad, entidad),
+                entidad=sigla_entidad(f.get("entidad", "")),
                 categoria=f.get("categoria", ""),
                 tecnologia=f.get("tecnologia", ""),
                 estado=f.get("estado", ""),
@@ -122,7 +153,43 @@ class FuenteIDEAM(FuentePluviometrica):
                 elevacion_msnm=_float(f.get("altitud")),
                 extra={"fecha_instalacion": f.get("fecha_instalacion")},
             )
-        log.info("Catálogo IDEAM: %d estaciones automáticas activas con precipitación", len(estaciones))
+        n_catalogo = len(estaciones)
+
+        # Estaciones de terceros (IDIGER, FOPAE, ISAGEN, PNN…) que transmiten lluvia
+        # por el sistema del IDEAM pero pueden no estar marcadas así en el catálogo.
+        try:
+            terceros = self.cliente.consultar(
+                DS_TIEMPO_REAL,
+                {
+                    "$query": "SELECT codigoestacion, nombreestacion, entidad, departamento, municipio, "
+                    "max(latitud) AS lat, max(longitud) AS lon WHERE codigosensor = '0240' "
+                    "GROUP BY codigoestacion, nombreestacion, entidad, departamento, municipio LIMIT 5000"
+                },
+                timeout_s=90,
+            )
+        except Exception as e:  # noqa: BLE001 - es un complemento; no debe frenar la búsqueda
+            log.warning("No se pudo consultar %s (estaciones de terceros): %s", DS_TIEMPO_REAL, e)
+            terceros = []
+        for f in terceros:
+            lat, lon = _float(f.get("lat")), _float(f.get("lon"))
+            codigo = normalizar_codigo(f["codigoestacion"])
+            if codigo in estaciones or lat is None or lon is None:
+                continue
+            estaciones[codigo] = Estacion(
+                codigo=codigo,
+                nombre=f.get("nombreestacion", ""),
+                fuente=self.nombre,
+                entidad=sigla_entidad(f.get("entidad", "")),
+                categoria="",
+                tecnologia="Automática (transmite en tiempo real)",
+                estado="Activa",
+                departamento=f.get("departamento", ""),
+                municipio=f.get("municipio", ""),
+                latitud=lat,
+                longitud=lon,
+            )
+        log.info("IDEAM (datos.gov.co): %d estaciones del catálogo + %d de terceros en tiempo real",
+                 n_catalogo, len(estaciones) - n_catalogo)
         return list(estaciones.values())
 
     # -------------------------------------------------------------- verificación
@@ -197,14 +264,6 @@ class FuenteIDEAM(FuentePluviometrica):
 
         df = pd.DataFrame(filas)
         df["fecha"] = pd.to_datetime(df["dia"]).dt.normalize()
-        df["precipitacion_mm"] = df["p"].astype(float).round(2)
+        df["precipitacion_mm"] = df["p"].astype(float)
         df["n_registros"] = df["n"].astype(int)
-        df = df[["fecha", "precipitacion_mm", "n_registros"]].sort_values("fecha").reset_index(drop=True)
-
-        # Observaciones esperadas por día: la moda de cada año (144 si el registro es
-        # cada 10 min; se adapta si en algún periodo la resolución fue otra).
-        anio = df["fecha"].dt.year
-        esperadas = df.groupby(anio)["n_registros"].transform(lambda s: s.mode().max())
-        cobertura = df["n_registros"] / esperadas
-        df.loc[cobertura < self.cobertura_minima, "precipitacion_mm"] = float("nan")
-        return df
+        return marcar_dias_incompletos(df, self.cobertura_minima)

@@ -4,7 +4,9 @@ Programa para automatizar la caracterización hidrológica de zonas de estudio e
 
 ## Módulo 1 — Estaciones cercanas y precipitación diaria
 
-Dado el punto de un proyecto (p. ej. una minigranja), busca las **5 estaciones pluviométricas activas más cercanas que tienen datos** y descarga en tiempo real sus series de precipitación diaria desde los datos abiertos del IDEAM (datos.gov.co). No guarda bases de datos locales: cada ejecución consulta la fuente.
+Dado el punto de un proyecto (p. ej. una minigranja), busca las **5 estaciones pluviométricas activas más cercanas que tienen datos** y descarga en tiempo real sus series de precipitación diaria. No guarda bases de datos locales: cada ejecución consulta las fuentes.
+
+Fuentes automáticas: IDEAM y terceros que transmiten por el IDEAM (datos.gov.co), Piragua (Corantioquia) y MARCO (Cornare). Las estaciones cercanas que no se pueden descargar automáticamente (convencionales del IDEAM en DHIME, SIATA, CAR, EPM…) se listan para descarga manual. Detalle en [docs/fuentes_datos.md](docs/fuentes_datos.md).
 
 No hace cálculos hidrológicos (máximos anuales, frecuencias, etc.); eso queda para fases siguientes.
 
@@ -32,7 +34,8 @@ Cada ejecución crea `salidas/<fecha_hora>_<lat>_<lon>/` con:
 
 | Archivo | Contenido |
 |---|---|
-| `resumen_estaciones.xlsx` | Hoja *Resumen* (código, nombre, entidad, estado, ubicación, elevación, distancia, periodo de registro, total de días con dato, % faltantes), hoja *Descartadas* (candidatas más cercanas sin datos útiles y el motivo) y hoja *Criterios* (fuentes y parámetros usados). |
+| `resumen_estaciones.xlsx` | Hoja *Resumen* (código, nombre, entidad, fuente, estado, ubicación, elevación, distancia, periodo de registro, total de días con dato, % faltantes), hoja *Descarga manual* (estaciones cercanas sin descarga automática y dónde conseguir sus datos), hoja *Descartadas* (candidatas sin datos útiles y el motivo) y hoja *Criterios* (fuentes y parámetros usados). |
+| `estaciones_descarga_manual.shp` | Las estaciones de la hoja *Descarga manual*, para verlas en QGIS/ArcGIS. |
 | `ubicacion_estaciones.shp` (+ `.shx .dbf .prj .cpg`) | Punto del proyecto (`TIPO = PROYECTO`) y estaciones (`TIPO = ESTACION`) en WGS84 (EPSG:4326), con los atributos del resumen. |
 | `series_precipitacion_diaria.xlsx` | Una hoja por estación: Fecha, Precipitacion_mm. Los días sin dato válido quedan vacíos. |
 | `series_csv/<codigo>.csv` | Las mismas series en CSV. |
@@ -44,7 +47,8 @@ Antes de usar los datos, lea [docs/fuentes_datos.md](docs/fuentes_datos.md): exp
 | Carpeta / archivo | Contenido | ¿Se versiona en Git? |
 |---|---|---|
 | `main.py` | Punto de entrada por consola | Sí |
-| `estaciones/` | Paquete del Módulo 1: `base.py` (contrato de fuentes), `ideam.py` (conector IDEAM), `buscador.py` (motor espacial), `socrata.py`, `geo.py`, `exportar.py` | Sí |
+| `buscar_estaciones.bat` | Lanzador con filas para escribir latitud, longitud y nombre | Sí |
+| `estaciones/` | Paquete del Módulo 1: `base.py` (contrato de fuentes), `ideam.py`, `piragua.py`, `cornare.py` (conectores), `buscador.py` (motor espacial), `manual.py` (lista para descarga manual), `exportar.py`, `geo.py`, `socrata.py`, `red.py` | Sí |
 | `docs/` | Documentación: fuentes, metodología, decisiones, bitácora | Sí |
 | `salidas/` | Entregables de cada ejecución | No (solo la carpeta) |
 | `datos/` | Insumos locales de otras fases (DEM, shapefiles…) | No (solo la carpeta) |

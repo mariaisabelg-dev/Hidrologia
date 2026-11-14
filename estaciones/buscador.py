@@ -47,13 +47,20 @@ class BuscadorEstaciones:
         if not fuentes:
             raise ValueError("Se necesita al menos una fuente de datos.")
         self.fuentes = {f.nombre: f for f in fuentes}
+        self.fuentes_caidas: list[str] = []
 
     # ------------------------------------------------------------------ búsqueda
     def candidatas(self, lat: float, lon: float) -> list[Estacion]:
         """Estaciones de todas las fuentes, ordenadas por distancia al punto."""
         todas: dict[tuple[str, str], Estacion] = {}
         for fuente in self.fuentes.values():
-            for e in fuente.catalogo():
+            try:
+                catalogo = fuente.catalogo()
+            except Exception as err:  # noqa: BLE001 - una fuente caída no debe frenar las demás
+                log.warning("Fuente %s no disponible (%s); se continúa sin ella.", fuente.nombre, err)
+                self.fuentes_caidas.append(fuente.nombre)
+                continue
+            for e in catalogo:
                 e.distancia_km = round(haversine_km(lat, lon, e.latitud, e.longitud), 3)
                 todas[(fuente.nombre, e.codigo)] = e
         return sorted(todas.values(), key=lambda e: e.distancia_km)
@@ -105,7 +112,7 @@ class BuscadorEstaciones:
     # ------------------------------------------------------------------ descarga
     def descargar_series(self, resultado: ResultadoBusqueda, desde: date, hasta: date | None = None) -> None:
         """Descarga las series y arma la tabla resumen dentro de `resultado`."""
-        hasta = hasta or date.today()
+        hasta = hasta or date.today() - timedelta(days=1)  # el día en curso siempre está incompleto
         filas = []
         for e in resultado.estaciones:
             log.info("Descargando %s (%s), %.1f km...", e.codigo, e.nombre, e.distancia_km)

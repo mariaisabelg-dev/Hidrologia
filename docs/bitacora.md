@@ -2,6 +2,15 @@
 
 Registro cronológico de avances, decisiones y pendientes. La entrada más reciente va arriba.
 
+## 2026-11-14 (tarde) — Más fuentes de datos
+
+- Inventario de fuentes abiertas de precipitación en Colombia (Antioquia, otras regiones y fuentes globales); resultado en [fuentes_datos.md](fuentes_datos.md).
+- Integradas: estaciones de terceros que transmiten por el IDEAM (`57sv-p2fu`), Piragua (Corantioquia, 107 estaciones, diaria desde 2013) y MARCO (Cornare, 32 estaciones, desde 2025).
+- Nueva hoja *Descarga manual* + shapefile: 10 estaciones IDEAM (DHIME, incluidas convencionales de series largas) y 10 de otras entidades (SIATA, AMVA, CAR…) más cercanas.
+- Correcciones: códigos IDEAM con/sin ceros iniciales; en Piragua los días vacíos llegan como 0 mm con 0 % de datos (ahora se exige cobertura también al verificar); certificados SSL incompletos de Cornare resueltos con `truststore`.
+- Prueba Medellín: 3 estaciones Piragua + 2 IDEAM en ~2–6 min.
+- Pendiente: lector de archivos descargados manualmente de DHIME (falta archivo de ejemplo); definir si la selección debe priorizar calidad (% faltantes, longitud) además de distancia.
+
 ## 2026-11-14 — Módulo 1: estaciones cercanas y precipitación diaria
 
 - Se crea el paquete `estaciones/` (contrato `FuentePluviometrica`, conector IDEAM, buscador espacial, exportadores) y `main.py`. Ver [fuentes_datos.md](fuentes_datos.md).

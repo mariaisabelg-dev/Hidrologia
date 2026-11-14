@@ -30,7 +30,7 @@ def _escribir_excel(ruta: Path, hojas: dict[str, pd.DataFrame]) -> None:
             _ajustar_hoja(xw.sheets[nombre[:31]], df)
 
 
-def resumen_excel(res: ResultadoBusqueda, carpeta: Path, criterios: dict) -> Path:
+def resumen_excel(res: ResultadoBusqueda, carpeta: Path, criterios: dict, manual: pd.DataFrame) -> Path:
     descartadas = pd.DataFrame(
         [
             {"Código": e.codigo, "Nombre": e.nombre, "Distancia (km)": e.distancia_km, "Motivo": motivo}
@@ -39,7 +39,34 @@ def resumen_excel(res: ResultadoBusqueda, carpeta: Path, criterios: dict) -> Pat
     )
     meta = pd.DataFrame({"Parámetro": list(criterios), "Valor": [str(v) for v in criterios.values()]})
     ruta = carpeta / "resumen_estaciones.xlsx"
-    _escribir_excel(ruta, {"Resumen": res.resumen, "Descartadas": descartadas, "Criterios": meta})
+    _escribir_excel(
+        ruta,
+        {"Resumen": res.resumen, "Descarga manual": manual, "Descartadas": descartadas, "Criterios": meta},
+    )
+    return ruta
+
+
+def shapefile_manual(manual: pd.DataFrame, carpeta: Path) -> Path | None:
+    """Estaciones sugeridas para descarga manual, para verlas en QGIS/ArcGIS."""
+    if manual.empty:
+        return None
+    ruta = carpeta / "estaciones_descarga_manual.shp"
+    with shapefile.Writer(str(ruta), shapeType=shapefile.POINT, encoding="utf-8") as w:
+        w.field("CODIGO", "C", 20)
+        w.field("NOMBRE", "C", 100)
+        w.field("ENTIDAD", "C", 100)
+        w.field("TECNOLOG", "C", 60)
+        w.field("MUNICIPIO", "C", 60)
+        w.field("ELEV_MSNM", "N", 8, 1)
+        w.field("DIST_KM", "N", 10, 3)
+        w.field("DONDE", "C", 120)
+        for _, r in manual.iterrows():
+            w.point(r["Longitud"], r["Latitud"])
+            elev = r["Elevación (msnm)"]
+            w.record(r["Código"], r["Nombre"], r["Entidad"], r["Tecnología"], r["Municipio"],
+                     None if pd.isna(elev) else float(elev), r["Distancia (km)"], r["Dónde obtener los datos"])
+    ruta.with_suffix(".prj").write_text(WKT_WGS84, encoding="ascii")
+    ruta.with_suffix(".cpg").write_text("UTF-8", encoding="ascii")
     return ruta
 
 

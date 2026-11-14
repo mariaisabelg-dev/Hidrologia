@@ -24,6 +24,32 @@ import pandas as pd
 COLUMNAS_SERIE = ["fecha", "precipitacion_mm", "n_registros"]
 
 
+def diaria_desde_subdiaria(obs: pd.DataFrame, cobertura_minima: float) -> pd.DataFrame:
+    """Suma observaciones sub-diarias (columnas fecha_hora, valor) a días calendario.
+
+    Un día es válido si tiene al menos `cobertura_minima` de las observaciones
+    esperadas. Las esperadas por día son la moda de cada año (144 si el registro es
+    cada 10 min, 288 si cada 5 min, 24 si horario…), así se adapta a cada estación.
+    Elimina instantes duplicados antes de sumar.
+    """
+    if obs.empty:
+        return pd.DataFrame(columns=COLUMNAS_SERIE)
+    obs = obs.drop_duplicates(subset="fecha_hora")
+    dia = obs["fecha_hora"].dt.normalize()
+    df = obs.groupby(dia)["valor"].agg(precipitacion_mm="sum", n_registros="count")
+    df = df.rename_axis("fecha").reset_index()
+    return marcar_dias_incompletos(df, cobertura_minima)
+
+
+def marcar_dias_incompletos(df: pd.DataFrame, cobertura_minima: float) -> pd.DataFrame:
+    """Deja en NaN la precipitación de días con pocas observaciones (ver diaria_desde_subdiaria)."""
+    df = df.sort_values("fecha").reset_index(drop=True)
+    esperadas = df.groupby(df["fecha"].dt.year)["n_registros"].transform(lambda s: s.mode().max())
+    df["precipitacion_mm"] = df["precipitacion_mm"].astype(float).round(2)
+    df.loc[df["n_registros"] / esperadas < cobertura_minima, "precipitacion_mm"] = float("nan")
+    return df[COLUMNAS_SERIE]
+
+
 @dataclass
 class Estacion:
     """Metadatos estandarizados de una estación pluviométrica."""
