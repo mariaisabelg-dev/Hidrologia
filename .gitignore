@@ -2,6 +2,7 @@
 datos/crudos/*
 datos/procesados/*
 resultados/*
+salidas/*
 !**/.gitkeep
 
 # Python
