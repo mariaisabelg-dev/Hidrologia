@@ -9,7 +9,9 @@ Registro cronológico de avances, decisiones y pendientes. La entrada más recie
 - Fuentes: catálogo CNE `hp9r-jxuu` y precipitación `s54a-sgyg` (solo estaciones automáticas; las convencionales no tienen API abierta).
 - Hallazgos: `s54a-sgyg` trae cada observación duplicada (se deduplica antes de sumar); `ORDER BY` en la API es impredecible, por lo que la verificación y la descarga usan consultas acotadas por fecha; en el Valle de Aburrá las estaciones SIATA/AMVA figuran en el catálogo pero no publican datos.
 - Prueba en Medellín (6.2442, -75.5812): 5 estaciones confirmadas (Olaya Herrera 2,3 km; Santa Elena 8,8 km; Metromedellín 10,0 km; Aeropuerto JMC 19,1 km; La Selva 22,3 km) en ~6 min. Metromedellín tiene 55 % de faltantes y promedio bajo (0,9 mm/día): revisar.
-- Pendiente: decidir día pluviométrico 00–24 h vs 07–07 h; conectores SIATA/CAR/DHIME para series largas.
+- Decidido: día de lluvia 00:00–24:00.
+- `buscar_estaciones.bat` con filas editables de Latitud, Longitud y Nombre del proyecto.
+- DHIME revisado: sin API pública; no se automatiza su servicio interno (ver fuentes_datos.md). Pendiente decidir: lectura de descargas manuales de DHIME y/o solicitud formal al IDEAM.
 
 ## 2026-11-12 — Creación del repositorio
 

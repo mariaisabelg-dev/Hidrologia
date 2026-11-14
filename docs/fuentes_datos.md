@@ -29,9 +29,16 @@ Los datasets `ksew-j3zj`, `m84s-22dd`, `uwim-sqxg` y `ns63-ha4g` son vistas de `
 | Candidatas | Catálogo con `estado = Activa`, tecnología automática y categoría que mide precipitación (pluviométrica, pluviográfica, climatológicas, agrometeorológica, sinópticas, meteorológica especial, hidrometeorológica). Filas repetidas del catálogo: una por código. Coordenadas: campos `latitud`/`longitud` (el campo `ubicaci_n` las trae invertidas). |
 | Distancia | Haversine, radio medio terrestre 6371.0088 km. |
 | Confirmación | Por orden de distancia: la estación debe tener datos de precipitación y el último debe ser de hace ≤ 365 días (`--max-dias-sin-datos`). Se toman las 5 primeras confirmadas (`--n`). |
-| Día pluviométrico | Día calendario 00:00–24:00 en la hora de la fuente (hora local). **No** es el día pluviométrico convencional del IDEAM (07:00–07:00); si se necesita, debe ajustarse en una fase posterior. |
+| Día pluviométrico | Día calendario 00:00–24:00 en la hora de la fuente (hora local). Decisión confirmada el 2026-11-14 (no se usa el día convencional 07:00–07:00). |
 | Día válido | Debe tener ≥ 80 % de las observaciones esperadas (`--cobertura-minima`). Las esperadas por día son la moda del número de observaciones diarias en ese año, para adaptarse a estaciones de 10 min o de 1 min. Los días incompletos quedan vacíos. |
 | % faltantes | Días sin dato válido entre la primera y la última fecha con dato, sobre el total de días de ese periodo. |
+
+## DHIME (revisado 2026-11-14)
+
+- `dhime.ideam.gov.co/atencionciudadano/` ahora redirige a `atencionciudadano.ideam.gov.co`: una aplicación web de ArcGIS para consultar y descargar manualmente las series (incluidas las estaciones convencionales).
+- No tiene API pública documentada. La aplicación usa por debajo un servicio interno (`modulopersonalizado.ideam.gov.co/DhimeServicePortal`) autenticado con una cuenta de servicio propia del portal. Además, aplica límites de estaciones y fechas por descarga, y la página de entrada tiene un control anti-bots.
+- **Decisión:** no automatizar ese servicio interno. Usar credenciales que el IDEAM no nos entregó y saltarse sus límites no es un acceso autorizado, y puede dejar de funcionar sin aviso.
+- Alternativas viables: (a) descargar manualmente desde el portal y que el programa lea esos archivos; (b) solicitar formalmente al IDEAM acceso a un servicio o entrega de datos.
 
 ## Fuentes candidatas para fases siguientes
 
