@@ -38,6 +38,8 @@ Los datasets `ksew-j3zj`, `m84s-22dd`, `uwim-sqxg` y `ns63-ha4g` son vistas de `
 - `dhime.ideam.gov.co/atencionciudadano/` ahora redirige a `atencionciudadano.ideam.gov.co`: una aplicación web de ArcGIS para consultar y descargar manualmente las series (incluidas las estaciones convencionales).
 - No tiene API pública documentada. La aplicación usa por debajo un servicio interno (`modulopersonalizado.ideam.gov.co/DhimeServicePortal`) autenticado con una cuenta de servicio propia del portal. Además, aplica límites de estaciones y fechas por descarga, y la página de entrada tiene un control anti-bots.
 - **Decisión:** no automatizar ese servicio interno. Usar credenciales que el IDEAM no nos entregó y saltarse sus límites no es un acceso autorizado, y puede dejar de funcionar sin aviso.
+- El portal no tiene cuentas de usuario (no hay inicio de sesión personal) ni texto de términos de uso publicado.
+- Prueba 2026-11-14: al abrir el portal con un navegador automatizado (Playwright/Chromium), el firewall del IDEAM respondió "Web Page Blocked" (Attack ID 20000051), es decir, bloquea activamente el acceso automatizado. No se intentó evadir el bloqueo: hacerlo iría contra un control explícito del IDEAM y podría hacer que bloqueen la IP de la empresa.
 - Alternativas viables: (a) descargar manualmente desde el portal y que el programa lea esos archivos; (b) solicitar formalmente al IDEAM acceso a un servicio o entrega de datos.
 
 ## Fuentes candidatas para fases siguientes
