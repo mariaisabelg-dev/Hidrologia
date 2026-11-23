@@ -1,14 +1,12 @@
-"""Escritura de entregables: resumen (Excel), shapefile y series (Excel + CSV)."""
+"""Escritura de entregables: Excel, shapefiles y series (Excel + CSV)."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import shapefile  # pyshp
-
-from .buscador import ResultadoBusqueda
 
 WKT_WGS84 = (
     'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],'
@@ -23,103 +21,70 @@ def _ajustar_hoja(ws, df: pd.DataFrame) -> None:
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = min(largo + 2, 60)
 
 
-def _escribir_excel(ruta: Path, hojas: dict[str, pd.DataFrame]) -> None:
+def excel(ruta: Path, hojas: dict[str, pd.DataFrame]) -> Path:
+    """Un libro con una hoja por DataFrame (las vacías llevan una nota)."""
     with pd.ExcelWriter(ruta, engine="openpyxl", date_format="YYYY-MM-DD", datetime_format="YYYY-MM-DD") as xw:
         for nombre, df in hojas.items():
+            if df.empty and len(df.columns) == 0:
+                df = pd.DataFrame({"Nota": ["Sin estaciones"]})
             df.to_excel(xw, sheet_name=nombre[:31], index=False)
             _ajustar_hoja(xw.sheets[nombre[:31]], df)
-
-
-def resumen_excel(res: ResultadoBusqueda, carpeta: Path, criterios: dict, manual: pd.DataFrame) -> Path:
-    descartadas = pd.DataFrame(
-        [
-            {"Código": e.codigo, "Nombre": e.nombre, "Distancia (km)": e.distancia_km, "Motivo": motivo}
-            for e, motivo in res.descartadas
-        ]
-    )
-    meta = pd.DataFrame({"Parámetro": list(criterios), "Valor": [str(v) for v in criterios.values()]})
-    ruta = carpeta / "resumen_estaciones.xlsx"
-    _escribir_excel(
-        ruta,
-        {"Resumen": res.resumen, "Descarga manual": manual, "Descartadas": descartadas, "Criterios": meta},
-    )
     return ruta
 
 
-def shapefile_manual(manual: pd.DataFrame, carpeta: Path) -> Path | None:
-    """Estaciones sugeridas para descarga manual, para verlas en QGIS/ArcGIS."""
-    if manual.empty:
-        return None
-    ruta = carpeta / "estaciones_descarga_manual.shp"
-    with shapefile.Writer(str(ruta), shapeType=shapefile.POINT, encoding="utf-8") as w:
-        w.field("CODIGO", "C", 20)
-        w.field("NOMBRE", "C", 100)
-        w.field("ENTIDAD", "C", 100)
-        w.field("TECNOLOG", "C", 60)
-        w.field("MUNICIPIO", "C", 60)
-        w.field("ELEV_MSNM", "N", 8, 1)
-        w.field("DIST_KM", "N", 10, 3)
-        w.field("DONDE", "C", 120)
-        for _, r in manual.iterrows():
-            w.point(r["Longitud"], r["Latitud"])
-            elev = r["Elevación (msnm)"]
-            w.record(r["Código"], r["Nombre"], r["Entidad"], r["Tecnología"], r["Municipio"],
-                     None if pd.isna(elev) else float(elev), r["Distancia (km)"], r["Dónde obtener los datos"])
-    ruta.with_suffix(".prj").write_text(WKT_WGS84, encoding="ascii")
-    ruta.with_suffix(".cpg").write_text("UTF-8", encoding="ascii")
-    return ruta
+def _num(x):
+    return None if x is None or pd.isna(x) else float(x)
 
 
-def series_excel_csv(res: ResultadoBusqueda, carpeta: Path) -> Path:
-    carpeta_csv = carpeta / "series_csv"
-    carpeta_csv.mkdir(exist_ok=True)
-    hojas = {}
-    for codigo, serie in res.series.items():
-        df = serie.rename(columns={"fecha": "Fecha", "precipitacion_mm": "Precipitacion_mm"})
-        df["Fecha"] = pd.to_datetime(df["Fecha"]).dt.date
-        hojas[codigo] = df
-        df.to_csv(carpeta_csv / f"{codigo}.csv", index=False, encoding="utf-8")
-    ruta = carpeta / "series_precipitacion_diaria.xlsx"
-    _escribir_excel(ruta, hojas)
-    return ruta
+def _fecha(x):
+    return x if isinstance(x, date) else None
 
 
-def shapefile_ubicacion(res: ResultadoBusqueda, carpeta: Path, nombre_proyecto: str) -> Path:
-    ruta = carpeta / "ubicacion_estaciones.shp"
+def shapefile_estaciones(ruta: Path, df: pd.DataFrame, lat: float, lon: float, nombre_proyecto: str) -> Path:
+    """Punto del proyecto (TIPO = PROYECTO) y estaciones (TIPO = ESTACION), WGS84."""
     with shapefile.Writer(str(ruta), shapeType=shapefile.POINT, encoding="utf-8") as w:
         w.field("TIPO", "C", 10)
         w.field("CODIGO", "C", 12)
         w.field("NOMBRE", "C", 100)
-        w.field("ENTIDAD", "C", 100)
-        w.field("FUENTE", "C", 20)
+        w.field("TECNOLOG", "C", 80)
         w.field("ESTADO", "C", 20)
-        w.field("DEPTO", "C", 50)
         w.field("MUNICIPIO", "C", 60)
         w.field("LATITUD", "N", 12, 6)
         w.field("LONGITUD", "N", 12, 6)
         w.field("ELEV_MSNM", "N", 8, 1)
         w.field("DIST_KM", "N", 10, 3)
-        w.field("F_INICIO", "D")
-        w.field("F_FIN", "D")
-        w.field("N_REGIST", "N", 8, 0)
-        w.field("PCT_FALT", "N", 6, 2)
+        w.field("INSTALADA", "D")
+        w.field("SUSPENDIDA", "D")
+        w.field("ANIOS_OPER", "N", 6, 1)
+        w.field("CUMPLE", "C", 3)
+        w.field("SELEC", "C", 2)
+        w.field("RANGOS", "C", 200)
 
-        w.point(res.longitud, res.latitud)
-        w.record("PROYECTO", "", nombre_proyecto, "", "", "", "", "",
-                 res.latitud, res.longitud, None, 0, None, None, None, None)
-
-        for _, r in res.resumen.iterrows():
+        w.point(lon, lat)
+        w.record("PROYECTO", "", nombre_proyecto, "", "", "", lat, lon, None, 0, None, None, None, "", "", "")
+        for i, r in df.iterrows():
             w.point(r["Longitud"], r["Latitud"])
             w.record(
-                "ESTACION", r["Código"], r["Nombre"], r["Entidad"], r["Fuente"], r["Estado"],
-                r["Departamento"], r["Municipio"], r["Latitud"], r["Longitud"],
-                None if pd.isna(r["Elevación (msnm)"]) else r["Elevación (msnm)"],
-                r["Distancia (km)"], r["Fecha inicio"], r["Fecha fin"],
-                r["Total registros (días)"], r["% faltantes"],
+                "ESTACION", r["Código"], r["Nombre"], r["Tecnología"], r["Estado"], r["Municipio"],
+                r["Latitud"], r["Longitud"], _num(r["Elevación (msnm)"]), r["Distancia (km)"],
+                _fecha(r["Instalada"]), _fecha(r["Suspendida"]), _num(r["Años de operación"]),
+                r.get("Cumple", "Sí"), r.get("Seleccionada", ""), r["Rangos a descargar en DHIME"],
             )
     ruta.with_suffix(".prj").write_text(WKT_WGS84, encoding="ascii")
     ruta.with_suffix(".cpg").write_text("UTF-8", encoding="ascii")
     return ruta
+
+
+def series_excel_csv(series: dict[str, pd.DataFrame], carpeta: Path) -> Path:
+    carpeta_csv = carpeta / "series_csv"
+    carpeta_csv.mkdir(exist_ok=True)
+    hojas = {}
+    for codigo, serie in series.items():
+        df = serie.rename(columns={"fecha": "Fecha", "precipitacion_mm": "Precipitacion_mm"})
+        df["Fecha"] = pd.to_datetime(df["Fecha"]).dt.date
+        hojas[codigo] = df
+        df.to_csv(carpeta_csv / f"{codigo}.csv", index=False, encoding="utf-8")
+    return excel(carpeta / "series_precipitacion_diaria.xlsx", hojas)
 
 
 def carpeta_ejecucion(base: Path, lat: float, lon: float) -> Path:

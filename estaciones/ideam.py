@@ -4,7 +4,8 @@ Datasets usados (verificados el 2026-11-13):
   - hp9r-jxuu  "Catálogo Nacional de Estaciones del IDEAM" (CNE): metadatos y estado
     de todas las estaciones del país (IDEAM y otras entidades).
   - s54a-sgyg  "Precipitación": observaciones cada 10 min de las estaciones
-    AUTOMÁTICAS del IDEAM (desde ~2003), actualizadas varias veces al día.
+    AUTOMÁTICAS del IDEAM y de terceros que transmiten por el IDEAM (IDIGER,
+    ISAGEN, FOPAE…), desde 2003-01-20, actualizadas varias veces al día.
 
 Limitaciones conocidas (ver docs/fuentes_datos.md):
   - Las estaciones convencionales (lectura manual diaria) no publican series en
@@ -48,6 +49,9 @@ CATEGORIAS_CON_PRECIPITACION = (
 
 DS_TIEMPO_REAL = "57sv-p2fu"  # "Datos de Estaciones de IDEAM y de Terceros": últimas ~12 h
 
+# Primer registro de s54a-sgyg (verificado 2026-11-14: 2003-01-20; no hay datos anteriores).
+INICIO_DATASET = date(2003, 1, 1)
+
 # Sigla por palabra clave (algunos nombres llegan con la codificación dañada desde la fuente).
 SIGLAS_ENTIDAD = [
     ("HIDROLOG", "IDEAM"),
@@ -64,6 +68,9 @@ SIGLAS_ENTIDAD = [
     ("RIOS NEGRO Y NARE", "CORNARE"),
     ("METROPOLITANA DEL VALLE DE ABURR", "AMVA"),
     ("EMPRESAS PÚBLICAS DE MEDELL", "EPM"),
+    ("FEDERACIÓN NACIONAL DE CAFETEROS", "FNC"),
+    ("FEDERACION NACIONAL DE CAFETEROS", "FNC"),
+    ("INVESTIGACIONES DE CAF", "CENICAFÉ"),
 ]
 
 
@@ -87,6 +94,52 @@ def normalizar_codigo(codigo: str) -> str:
     Se usa la forma de 10 dígitos, que es la de las series de datos."""
     codigo = (codigo or "").strip()
     return codigo.zfill(10) if codigo.isdigit() else codigo
+
+
+def _fecha_dmy(texto: str | None) -> date | None:
+    """Fechas del catálogo, en formato dd/mm/aaaa."""
+    try:
+        return datetime.strptime((texto or "").strip()[:10], "%d/%m/%Y").date()
+    except ValueError:
+        return None
+
+
+def catalogo_nacional(cliente: ClienteSocrata | None = None) -> list[dict]:
+    """Todas las estaciones del CNE que miden precipitación, de cualquier estado,
+    tecnología y entidad, con fechas de instalación y suspensión. Una fila por código."""
+    cliente = cliente or ClienteSocrata()
+    categorias = ", ".join(f"'{c}'" for c in CATEGORIAS_CON_PRECIPITACION)
+    filas = cliente.consultar(
+        DS_CATALOGO,
+        {
+            "$select": "codigo, nombre, categoria, tecnologia, estado, entidad, departamento, municipio, "
+            "latitud, longitud, altitud, fecha_instalacion, fecha_suspension",
+            "$where": f"categoria in ({categorias})",
+            "$limit": 50000,
+        },
+    )
+    vistos: dict[str, dict] = {}
+    for f in filas:
+        lat, lon = _float(f.get("latitud")), _float(f.get("longitud"))
+        codigo = normalizar_codigo(f.get("codigo"))
+        if lat is None or lon is None or codigo in vistos:
+            continue
+        vistos[codigo] = {
+            "codigo": codigo,
+            "nombre": f.get("nombre", ""),
+            "categoria": f.get("categoria", ""),
+            "tecnologia": f.get("tecnologia", ""),
+            "estado": f.get("estado", ""),
+            "entidad": sigla_entidad(f.get("entidad", "")),
+            "departamento": f.get("departamento", ""),
+            "municipio": f.get("municipio", ""),
+            "latitud": lat,
+            "longitud": lon,
+            "altitud": _float(f.get("altitud")),
+            "instalacion": _fecha_dmy(f.get("fecha_instalacion")),
+            "suspension": _fecha_dmy(f.get("fecha_suspension")),
+        }
+    return list(vistos.values())
 
 
 def _bloques(desde: date, hasta: date, meses: int = 6) -> list[tuple[date, date]]:
@@ -119,39 +172,34 @@ class FuenteIDEAM(FuentePluviometrica):
         self.hilos = hilos
         self.cobertura_minima = cobertura_minima
         self.bloques_fallidos: list[tuple[str, date, date]] = []
+        self.catalogo_nacional: list[dict] | None = None  # se puede pasar ya descargado
 
     # ------------------------------------------------------------------ catálogo
     def catalogo(self) -> list[Estacion]:
-        categorias = ", ".join(f"'{c}'" for c in CATEGORIAS_CON_PRECIPITACION)
-        filas = self.cliente.consultar(
-            DS_CATALOGO,
-            {
-                "$select": "codigo, nombre, categoria, tecnologia, estado, departamento, municipio, "
-                "latitud, longitud, altitud, entidad, fecha_instalacion",
-                "$where": f"estado = 'Activa' AND tecnologia like '%Autom%' AND categoria in ({categorias})",
-                "$limit": 50000,
-            },
-        )
+        """Estaciones automáticas del CNE que pueden tener 10 años en s54a: activas, en
+        mantenimiento o suspendidas después de 2013 (el dataset empieza en 2003)."""
+        nacional = self.catalogo_nacional or catalogo_nacional(self.cliente)
+        corte = date(INICIO_DATASET.year + 10, 1, 1)
         estaciones: dict[str, Estacion] = {}
-        for f in filas:  # el catálogo trae filas repetidas: se deja una por código
-            lat, lon = _float(f.get("latitud")), _float(f.get("longitud"))
-            codigo = normalizar_codigo(f.get("codigo"))
-            if codigo in estaciones or lat is None or lon is None:
+        for f in nacional:
+            if "Autom" not in f["tecnologia"]:
                 continue
-            estaciones[codigo] = Estacion(
-                codigo=codigo,
-                nombre=f.get("nombre", ""),
+            if f["estado"] == "Suspendida" and (f["suspension"] is None or f["suspension"] < corte):
+                continue
+            estaciones[f["codigo"]] = Estacion(
+                codigo=f["codigo"],
+                nombre=f["nombre"],
                 fuente=self.nombre,
-                entidad=sigla_entidad(f.get("entidad", "")),
-                categoria=f.get("categoria", ""),
-                tecnologia=f.get("tecnologia", ""),
-                estado=f.get("estado", ""),
-                departamento=f.get("departamento", ""),
-                municipio=f.get("municipio", ""),
-                latitud=lat,
-                longitud=lon,
-                elevacion_msnm=_float(f.get("altitud")),
-                extra={"fecha_instalacion": f.get("fecha_instalacion")},
+                entidad=f["entidad"],
+                categoria=f["categoria"],
+                tecnologia=f["tecnologia"],
+                estado=f["estado"],
+                departamento=f["departamento"],
+                municipio=f["municipio"],
+                latitud=f["latitud"],
+                longitud=f["longitud"],
+                elevacion_msnm=f["altitud"],
+                extra={"fecha_instalacion": f["instalacion"], "fecha_suspension": f["suspension"]},
             )
         n_catalogo = len(estaciones)
 
@@ -223,6 +271,23 @@ class FuenteIDEAM(FuentePluviometrica):
         estacion.extra["motivo"] = f"sin datos desde {desde} (tiene registros más antiguos)"
         return None
 
+    def tiene_datos_antes(self, estacion: Estacion, fecha: date) -> bool | None:
+        # Un conteo responde mucho más rápido que pedir una fila con filtro de fecha
+        # (medido 2026-11-14: 3–50 s frente a más de 100 s).
+        try:
+            filas = self.cliente.consultar(
+                DS_PRECIPITACION,
+                {
+                    "$select": "count(*) AS n",
+                    "$where": f"codigoestacion = '{estacion.codigo}' "
+                    f"AND fechaobservacion < '{fecha.isoformat()}T00:00:00'",
+                },
+                timeout_s=90,
+            )
+        except requests.Timeout:
+            return None
+        return bool(filas) and int(filas[0].get("n", 0)) > 0
+
     # ------------------------------------------------------------------- series
     def _consulta_bloque(self, codigo: str, a: date, b: date) -> list[dict]:
         # 1) agrupa por instante para eliminar duplicados; 2) suma por día calendario.
@@ -254,7 +319,7 @@ class FuenteIDEAM(FuentePluviometrica):
                 return []
 
     def serie_diaria(self, estacion: Estacion, desde: date, hasta: date) -> pd.DataFrame:
-        bloques = _bloques(desde, hasta)
+        bloques = _bloques(max(desde, INICIO_DATASET), hasta)
         with ThreadPoolExecutor(max_workers=self.hilos) as pool:
             partes = pool.map(lambda ab: self._bloque(estacion.codigo, *ab), bloques)
             filas = [f for parte in partes for f in parte]

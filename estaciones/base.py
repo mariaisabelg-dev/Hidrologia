@@ -12,6 +12,7 @@ fuente nueva no requiere tocar el resto del código.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import calendar
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -48,6 +49,20 @@ def marcar_dias_incompletos(df: pd.DataFrame, cobertura_minima: float) -> pd.Dat
     df["precipitacion_mm"] = df["precipitacion_mm"].astype(float).round(2)
     df.loc[df["n_registros"] / esperadas < cobertura_minima, "precipitacion_mm"] = float("nan")
     return df[COLUMNAS_SERIE]
+
+
+def anios_completos(serie: pd.DataFrame, cobertura_anual: float) -> int:
+    """Años calendario con al menos `cobertura_anual` de sus días con dato válido.
+
+    Es la medida de longitud de registro que usa la selección: un año con muchos
+    huecos no sirve para análisis de máximos anuales, así que no cuenta.
+    """
+    validos = serie.dropna(subset=["precipitacion_mm"])
+    if validos.empty:
+        return 0
+    por_anio = validos.groupby(validos["fecha"].dt.year).size()
+    dias = pd.Series([366 if calendar.isleap(a) else 365 for a in por_anio.index], index=por_anio.index)
+    return int((por_anio / dias >= cobertura_anual).sum())
 
 
 @dataclass
@@ -90,6 +105,14 @@ class FuentePluviometrica(ABC):
         antes de descargar series completas. Si devuelve None, puede dejar la causa
         en `estacion.extra["motivo"]`.
         """
+
+    def tiene_datos_antes(self, estacion: Estacion, fecha: date) -> bool | None:
+        """¿Hay registros anteriores a `fecha`? Filtro rápido de longitud de registro.
+
+        None = no se sabe (la fuente no lo permite o la consulta no respondió a
+        tiempo); en ese caso la decisión se toma después de descargar la serie.
+        """
+        return None
 
     @abstractmethod
     def serie_diaria(self, estacion: Estacion, desde: date, hasta: date) -> pd.DataFrame:

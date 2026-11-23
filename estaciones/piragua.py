@@ -27,7 +27,8 @@ from .red import ClienteJSON
 log = logging.getLogger(__name__)
 
 URL = "https://piragua.corantioquia.gov.co/api/v1"
-TIPOS = {1: ("precipitacion", "muestra"), 8: ("meteorologia", "lluvia")}
+INICIO_API = date(2000, 1, 1)
+TIPOS = {1:("precipitacion", "muestra"), 8: ("meteorologia", "lluvia")}
 
 
 class FuentePiragua(FuentePluviometrica):
@@ -74,20 +75,28 @@ class FuentePiragua(FuentePluviometrica):
         inicio = max(desde, date.today() - timedelta(days=45))
         for a in dict.fromkeys([inicio, desde]):
             d = self.cliente.get(url, {"fecha__gte": a.isoformat(), "fecha__lt": (date.today() + timedelta(days=1)).isoformat()})
-            # Días vacíos llegan como 0 mm con porc_datos 0: se exige la cobertura mínima.
-            fechas = [
-                v["fecha"][:10]
-                for v in d["values"]
-                if float(v.get(campo) or -999) >= 0 and float(v.get("porc_datos") or 0) >= 100 * self.cobertura_minima
-            ]
+            fechas = [v["fecha"][:10] for v in d["values"] if self._valido(v, campo)]
             if fechas:  # la API ordena de la más reciente a la más antigua
                 return date.fromisoformat(max(fechas))
         estacion.extra["motivo"] = f"sin datos de lluvia desde {desde}"
         return None
 
+    def _valido(self, v: dict, campo: str) -> bool:
+        # Días vacíos llegan como 0 mm con porc_datos 0: se exige la cobertura mínima.
+        return float(v.get(campo) or -999) >= 0 and float(v.get("porc_datos") or 0) >= 100 * self.cobertura_minima
+
+    def tiene_datos_antes(self, estacion: Estacion, fecha: date) -> bool | None:
+        url, campo = self._url_diaria(estacion)
+        d = self.cliente.get(url, {"fecha__gte": (fecha - timedelta(days=3 * 365)).isoformat(),
+                                   "fecha__lt": fecha.isoformat()})
+        if any(self._valido(v, campo) for v in d["values"]):
+            return True
+        return False if d["count"] == 0 else None
+
     def serie_diaria(self, estacion: Estacion, desde: date, hasta: date) -> pd.DataFrame:
         url, campo = self._url_diaria(estacion)
-        params = {"fecha__gte": desde.isoformat(), "fecha__lt": (hasta + timedelta(days=1)).isoformat()}
+        # La API rechaza fechas anteriores a 2000 ("Incorrect datetime format"); la red empieza en 2013.
+        params = {"fecha__gte": max(desde, INICIO_API).isoformat(), "fecha__lt": (hasta + timedelta(days=1)).isoformat()}
         primera = self.cliente.get(url, params)
         por_pagina = max(len(primera["values"]), 1)
         paginas = math.ceil(primera["count"] / por_pagina)

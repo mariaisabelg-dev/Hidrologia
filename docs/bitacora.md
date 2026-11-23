@@ -2,6 +2,21 @@
 
 Registro cronológico de avances, decisiones y pendientes. La entrada más reciente va arriba.
 
+## 2026-11-23 — Solo estaciones DHIME, selección por distancia
+
+- Prueba de Medellín con el criterio de 10 años completos sobre fuentes automáticas: 0 estaciones cumplieron (la mejor, 8 años); tomó ~18 h y falló al exportar sin series. Conclusión: las series largas están en DHIME.
+- Decisión del usuario: usar solo estaciones del IDEAM (DHIME), máximo 5, las más cercanas a ≤ 50 km. Calibrar con puntos ya estudiados antes de definir reglas más finas.
+- Nuevo flujo: `seleccion.py` escoge con el catálogo (segundos) y entrega rangos de ≤ 29 años a descargar; hoja *En el radar* con todas las estaciones del radio. Los CSV de DHIME en `datos/crudos/` se unen y se reportan periodo, % faltantes y años completos.
+- Pruebas: Abejorral 16 s (la estación 26180160 con su archivo 1971–1999: 27 años completos); Medellín 5 s (Laureles, Olaya Herrera convencional y automática, Villanueva, Pajarito).
+
+## 2026-11-14 (noche) — Criterios de selección y flujo DHIME
+
+- Criterios definidos por el usuario: la estación sirve si tiene al menos 10 años de registro y no se suspendió antes de 2000. Implementado como: dato posterior a 2000-01-01, y ≥ 10 años completos (años con ≥ 80 % de días con dato). Se descarga toda la historia disponible en cada fuente.
+- Lector de CSV de DHIME (`estaciones/dhime.py`): une varios archivos por estación, porque DHIME limita cada descarga a 29 años. La hoja *Descarga manual* ahora incluye estaciones suspendidas después de 2000, años de operación, lo ya cargado y los tramos de ≤ 29 años que faltan.
+- Cornare (MARCO) sale de la selección automática: solo tiene datos desde 2025.
+- Aclarado: las estaciones de otras entidades que transmiten por el IDEAM (IDIGER, ISAGEN, FOPAE…) siguen incluidas; su historia está en `s54a-sgyg`. Las que se descartan en el Valle de Aburrá (AMVA/SIATA) son las que no publican datos.
+- Cartas de solicitud de acceso a datos para IDEAM, SIATA, EPM, CAR y Cornare (documento aparte).
+
 ## 2026-11-14 (tarde) — Más fuentes de datos
 
 - Inventario de fuentes abiertas de precipitación en Colombia (Antioquia, otras regiones y fuentes globales); resultado en [fuentes_datos.md](fuentes_datos.md).
