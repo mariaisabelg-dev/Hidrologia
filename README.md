@@ -37,7 +37,7 @@ Con el lanzador: abra `buscar_estaciones.bat` con el Bloc de notas, escriba lati
 
 ### Entregables
 
-Cada ejecución crea `salidas/<fecha_hora>_<lat>_<lon>/` con:
+Cada ejecución crea `salidas/Estaciones_<NOMBRE_PROYECTO>/` (si ya existe, `_2`, `_3`, ...) con:
 
 | Archivo | Contenido |
 |---|---|

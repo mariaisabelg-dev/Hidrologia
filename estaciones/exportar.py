@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
+import re
 
 import pandas as pd
 import shapefile  # pyshp
@@ -87,8 +88,13 @@ def series_excel_csv(series: dict[str, pd.DataFrame], carpeta: Path) -> Path:
     return excel(carpeta / "series_precipitacion_diaria.xlsx", hojas)
 
 
-def carpeta_ejecucion(base: Path, lat: float, lon: float) -> Path:
-    marca = datetime.now().strftime("%Y%m%d_%H%M%S")
-    carpeta = base / f"{marca}_{lat:.4f}_{lon:.4f}"
-    carpeta.mkdir(parents=True, exist_ok=False)
+def carpeta_ejecucion(base: Path, nombre_proyecto: str) -> Path:
+    """salidas/Estaciones_<proyecto>; si ya existe, Estaciones_<proyecto>_2, _3, ..."""
+    limpio = re.sub(r'[<>:"/\\|?*]', "", nombre_proyecto).strip().rstrip(".") or "Proyecto"
+    nombre = "Estaciones_" + re.sub(r"\s+", "_", limpio)
+    carpeta, i = base / nombre, 1
+    while carpeta.exists():
+        i += 1
+        carpeta = base / f"{nombre}_{i}"
+    carpeta.mkdir(parents=True)
     return carpeta

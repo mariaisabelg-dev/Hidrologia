@@ -135,7 +135,7 @@ def main() -> None:
         series, stats = procesar_cargadas(sel, dhime, args.cobertura_anual)
         sel = pd.concat([sel.drop(columns=["Cumple", "Motivo"]), stats], axis=1)
 
-    carpeta = exportar.carpeta_ejecucion(args.salidas, lat, lon)
+    carpeta = exportar.carpeta_ejecucion(args.salidas, args.nombre)
     criterios = {
         "Proyecto": args.nombre,
         "Latitud proyecto": lat,
